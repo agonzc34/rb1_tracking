@@ -5,24 +5,32 @@ import cv_bridge
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from message_filters import ApproximateTimeSynchronizer, Subscriber
-from visualization_msgs.msg import Marker
-from geometry_msgs.msg import Point
-from builtin_interfaces.msg import Duration
+from message_filters import ApproximateTimeSynchronizer, Subscriber, TimeSynchronizer
+
 import rclpy.logging
+import struct
 
-
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, PointCloud2
 from yolo_msgs.msg import BoundingBoxes, BoundingBox
+from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import Point, PoseStamped
+from builtin_interfaces.msg import Duration
+
 
 
 class TrackingPublisher(Node):
-
+    
     def __init__(self):
         super().__init__('tracking_node')
                 
-        self.image_sub_ = self.create_subscription(Image, "/camera/image_raw", self.track_callback, 10)
-        self.marker_pub_ = self.create_publisher(Marker, '/visualization_marker', 10)
+        self.image_sub_ = Subscriber(self, Image, "/camera/image_raw")
+        self.point_cloud_sub_ = Subscriber(self, PointCloud2, "/camera/points")
+
+        self.topic_sync = TimeSynchronizer([self.image_sub_, self.point_cloud_sub_], 10)
+        self.topic_sync.registerCallback(self.track_callback)
+
+        self.marker_pub_ = self.create_publisher(MarkerArray, '/visualization_marker', 10)
+        self.goal_pose_ = self.create_publisher(PoseStamped, '/goal_pose', 10)
 
         self.tracker = cv.TrackerCSRT.create()
         self.cv_bridge = cv_bridge.CvBridge()
@@ -39,7 +47,7 @@ class TrackingPublisher(Node):
         self.id = 0
                 
                     
-    def track_callback(self, image: Image):
+    def track_callback(self, image: Image, point_cloud: PointCloud2):
         cv_image = self.cv_bridge.imgmsg_to_cv2(image)
         
         if self.init_tracker is False:
@@ -56,52 +64,172 @@ class TrackingPublisher(Node):
             
             obj_center_in_img = (x + w/2, y + h/2)
             obj_center_to_img_center = (obj_center_in_img[0] - self.camera['image_width']/2, obj_center_in_img[1] - self.camera['image_height']/2)
-            distance = 2.0
             
             cv.circle(cv_image, (int(obj_center_in_img[0]), int(obj_center_in_img[1])), 5, (0, 0, 255), -1)
             
             horizontal_angle = obj_center_to_img_center[0] / self.camera['image_width'] * self.camera['horizontal_fov']
-            end_x = distance * np.sin(horizontal_angle)
-            
-            
             vertical_angle = obj_center_to_img_center[1] / self.camera['image_height'] * self.camera['horizontal_fov'] * self.camera['image_height'] / self.camera['image_width']
-            end_y = distance * np.sin(vertical_angle)
             
-                        
-            marker = Marker()
-            marker.header.frame_id = 'camera_link'
-            marker.header.stamp = image.header.stamp
-            marker.ns = 'rb1_debug_tracker'
+            horizontal_pos = None
+            vertical_pos = None
+            distance = None
             
-            marker.type = Marker.LINE_STRIP
-            marker.action = Marker.ADD
-            marker.frame_locked = True
+            distance_img = self.camera['far_clip']
+            horizontal_img = distance_img * np.sin(horizontal_angle)
+            vertical_img = distance_img * np.sin(vertical_angle)
             
-            marker.color.a = 1.0
-            marker.scale.x = 0.01
-            marker.lifetime = Duration(sec=1, nanosec=0)
+            point_cloud = self.transfromPointCloud(point_cloud)
+            estimated_point = None
             
-            robot_point = Point()
-            end_point = Point()
+            for point in point_cloud:
+                distance_x = point[0] / np.sin(horizontal_angle)
+                distance_y = point[1] / np.sin(vertical_angle)
+                distance_z = point[2]
+                
+                diff_distance = abs(distance_x - distance_y)
+                point[3] = diff_distance
             
-            robot_point.x = 0.0
-            robot_point.y = 0.0
-            robot_point.z = 0.0
+                if diff_distance < 0.0001 and distance_z < self.camera['far_clip'] and distance_z > self.camera['near_clip']:
+                    print('found')
+                    estimated_point = point
+                    break
             
-            end_point.x = distance
-            end_point.y = -end_x
-            end_point.z = -end_y
-            
-            marker.points.append(robot_point)
-            marker.points.append(end_point)
-            
-            self.marker_pub_.publish(marker)            
+            if estimated_point is not None:
+                horizontal_pos = estimated_point[0]
+                vertical_pos = estimated_point[1]
+                distance = estimated_point[2]
+                           
+                print("x: {}, y: {}, z: {}, prob: {}".format(horizontal_pos, vertical_pos, distance, estimated_point[3]))
+                self.debug_line(image, horizontal_img, vertical_img, distance_img, horizontal_pos, vertical_pos, distance)
+                
+                selected_point = (horizontal_img, vertical_img, distance)
+                
 
         cv.imshow('Tracking', cv_image)
         cv.waitKey(1)
         
         self.id += 1
 
+
+    def transfromPointCloud(self, pointcloud: PointCloud2):
+        point_list = []
+        
+        is_bigendian = pointcloud.is_bigendian
+        point_size = pointcloud.point_step
+        
+        data_format = ""
+        
+        if is_bigendian:
+            data_format = ">f"
+        else:
+            data_format = "<f"
+        
+        for i in range(0, len(pointcloud.data), point_size):
+            x = struct.unpack_from(data_format, pointcloud.data, i)[0]
+            y = struct.unpack_from(data_format, pointcloud.data, i + 4)[0]
+            z = struct.unpack_from(data_format, pointcloud.data, i + 8)[0]
+            rbg = struct.unpack_from(data_format, pointcloud.data, i + 16)[0]
+            
+            # if rbg == 0.0:
+            #     pass
+            point_list.append([x, y, z, rbg])
+        
+        # max_x = max(point_list, key=lambda x: x[0])[0]
+        # max_y = max(point_list, key=lambda x: x[1])[1]
+        # min_x = min(point_list, key=lambda x: x[0])[0]
+        # min_y = min(point_list, key=lambda x: x[1])[1]
+        
+        # print('Maximos y minimos')
+        # print(max_x, max_y, min_x, min_y)
+        
+        return point_list
+    
+    def debug_line(self, image: Image, horizontal_pos_img: float, vertical_pos_img: float, distance_img: float, horizontal_pos_cloud: float, vertical_pos_cloud: float, distance_cloud: float):
+        marker_array = MarkerArray()
+        marker_array.markers = []
+        
+        marker_line = Marker()
+        marker_line.header.frame_id = 'camera_link'
+        marker_line.header.stamp = image.header.stamp
+        marker_line.ns = 'rb1_debug_tracker'
+        
+        marker_line.type = Marker.LINE_STRIP
+        marker_line.action = Marker.ADD
+        marker_line.frame_locked = True
+        
+        marker_line.color.a = 1.0
+        marker_line.scale.x = 0.01
+        marker_line.lifetime = Duration(sec=1, nanosec=0)
+        
+        robot_point = Point()
+        end_point = Point()
+        
+        robot_point.x = 0.0
+        robot_point.y = 0.0
+        robot_point.z = 0.0
+        
+        end_point.x = distance_img
+        end_point.y = -horizontal_pos_img
+        end_point.z = -vertical_pos_img
+        
+        marker_line.points.append(robot_point)
+        marker_line.points.append(end_point)
+        
+        marker_array.markers.append(marker_line)
+        
+        marker_point = Marker()
+        marker_point.header.frame_id = 'camera_link'
+        marker_point.header.stamp = image.header.stamp
+        marker_point.ns = 'rb1_debug_tracker_p'
+        
+        marker_point.type = Marker.SPHERE
+        marker_point.action = Marker.ADD
+        marker_point.frame_locked = True
+        
+        marker_point.color.a = 1.0
+        marker_point.color.r = 1.0
+        
+        marker_point.scale.x = 0.1
+        marker_point.scale.y = 0.1
+        marker_point.scale.z = 0.1
+        
+        marker_point.pose.position.x = distance_cloud
+        marker_point.pose.position.y = -horizontal_pos_cloud
+        marker_point.pose.position.z = -vertical_pos_cloud
+        
+        marker_array.markers.append(marker_point)
+        
+        top_left_point = self.draw_point(1, image, 2.3, 1.0, 3.0)
+        marker_array.markers.append(top_left_point)
+        
+        alternative_point = self.draw_point(2, image, horizontal_pos_img, vertical_pos_img, distance_cloud)
+        marker_array.markers.append(alternative_point)
+        
+        self.marker_pub_.publish(marker_array)
+        
+    def draw_point(self, id, image: Image, horizontal_pos: float, vertical_pos: float, distance: float):
+        marker_point = Marker()
+        marker_point.header.frame_id = 'camera_link'
+        marker_point.header.stamp = image.header.stamp
+        marker_point.ns = 'rb1_debug_tracker ' + str(id)
+        
+        marker_point.type = Marker.SPHERE
+        marker_point.action = Marker.ADD
+        marker_point.frame_locked = True
+        marker_point.lifetime = Duration(sec=1, nanosec=0)
+        
+        marker_point.color.a = 1.0
+        marker_point.color.b = 1.0
+        
+        marker_point.scale.x = 0.1
+        marker_point.scale.y = 0.1
+        marker_point.scale.z = 0.1
+        
+        marker_point.pose.position.x = distance
+        marker_point.pose.position.y = -horizontal_pos
+        marker_point.pose.position.z = -vertical_pos
+        
+        return marker_point        
 
 def main(args=None):
     rclpy.init(args=args)
