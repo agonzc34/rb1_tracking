@@ -17,7 +17,6 @@ from geometry_msgs.msg import Point, PoseStamped
 from builtin_interfaces.msg import Duration
 
 
-
 class TrackingPublisher(Node):
     
     def __init__(self):
@@ -44,6 +43,9 @@ class TrackingPublisher(Node):
             'image_height': 480
         }
         
+        self.camera['image_ratio'] = self.camera['image_width'] / self.camera['image_height']
+        self.camera['vertical_fov'] = self.camera['horizontal_fov'] / self.camera['image_ratio']
+        
         self.id = 0
                 
                     
@@ -67,42 +69,56 @@ class TrackingPublisher(Node):
             
             cv.circle(cv_image, (int(obj_center_in_img[0]), int(obj_center_in_img[1])), 5, (0, 0, 255), -1)
             
-            horizontal_angle = obj_center_to_img_center[0] / self.camera['image_width'] * self.camera['horizontal_fov']
-            vertical_angle = obj_center_to_img_center[1] / self.camera['image_height'] * self.camera['horizontal_fov'] * self.camera['image_height'] / self.camera['image_width']
+            obj_to_center_prop = (-obj_center_to_img_center[0] / self.camera['image_width'], -obj_center_to_img_center[1] / self.camera['image_height']) # -0.5 a 0.5
             
+            max_horizontal = np.tan(self.camera['horizontal_fov'] / 2) * self.camera['far_clip']
+            max_vertical = np.tan(self.camera['vertical_fov'] / 2) * self.camera['far_clip']
+                        
             horizontal_pos = None
             vertical_pos = None
             distance = None
             
             distance_img = self.camera['far_clip']
-            horizontal_img = distance_img * np.sin(horizontal_angle)
-            vertical_img = distance_img * np.sin(vertical_angle)
+            horizontal_img = max_horizontal * obj_to_center_prop[0] * 2
+            vertical_img = max_vertical * obj_to_center_prop[1] * 2
+                        
+            horizontal_angle = np.arctan(horizontal_img / distance_img)
+            vertical_angle = np.arctan(vertical_img / distance_img)
+            
+            print('horizontal_angle: {}, vertical_angle: {}'.format(horizontal_angle, vertical_angle))
+            print('selected point: {}, {}, {}'.format(horizontal_img, vertical_img, distance_img))
             
             point_cloud = self.transfromPointCloud(point_cloud)
             estimated_point = None
             
-            for point in point_cloud:
-                distance_x = point[0] / np.sin(horizontal_angle)
-                distance_y = point[1] / np.sin(vertical_angle)
-                distance_z = point[2]
-                
-                diff_distance = abs(distance_x - distance_y)
-                point[3] = diff_distance
+            min_err = 1
             
-                if diff_distance < 0.0001 and distance_z < self.camera['far_clip'] and distance_z > self.camera['near_clip']:
-                    print('found')
+            for point in point_cloud:
+                if abs(point[2] - self.camera['far_clip']) < 0.0001:
+                    continue
+                err_x = abs(point[2] * np.tan(horizontal_angle) + point[0])
+                err_y = abs(point[2] * np.tan(vertical_angle) + point[1])
+                err = pow(err_x, 2) + pow(err_y, 2)
+                
+                # print('err_x: {}, err_y: {}'.format(err_x, err_y))
+                
+                if err < min_err:
+                    min_err = err
                     estimated_point = point
-                    break
+                    print('found possible point')
+                    # break
             
             if estimated_point is not None:
-                horizontal_pos = estimated_point[0]
-                vertical_pos = estimated_point[1]
+                horizontal_pos = -estimated_point[0]
+                vertical_pos = -estimated_point[1]
                 distance = estimated_point[2]
                            
-                print("x: {}, y: {}, z: {}, prob: {}".format(horizontal_pos, vertical_pos, distance, estimated_point[3]))
+                print("estimated: {}, y: {}, z: {}".format(horizontal_pos, vertical_pos, distance))
                 self.debug_line(image, horizontal_img, vertical_img, distance_img, horizontal_pos, vertical_pos, distance)
                 
                 selected_point = (horizontal_img, vertical_img, distance)
+                
+                
                 
 
         cv.imshow('Tracking', cv_image)
@@ -130,9 +146,13 @@ class TrackingPublisher(Node):
             z = struct.unpack_from(data_format, pointcloud.data, i + 8)[0]
             rbg = struct.unpack_from(data_format, pointcloud.data, i + 16)[0]
             
+            if z == 3.0:
+                continue
+            
             # if rbg == 0.0:
             #     pass
             point_list.append([x, y, z, rbg])
+            print('x: {}, y: {}, z: {}, rbg: {}'.format(x, y, z, rbg))
         
         # max_x = max(point_list, key=lambda x: x[0])[0]
         # max_y = max(point_list, key=lambda x: x[1])[1]
@@ -169,8 +189,8 @@ class TrackingPublisher(Node):
         robot_point.z = 0.0
         
         end_point.x = distance_img
-        end_point.y = -horizontal_pos_img
-        end_point.z = -vertical_pos_img
+        end_point.y = horizontal_pos_img
+        end_point.z = vertical_pos_img
         
         marker_line.points.append(robot_point)
         marker_line.points.append(end_point)
@@ -194,16 +214,16 @@ class TrackingPublisher(Node):
         marker_point.scale.z = 0.1
         
         marker_point.pose.position.x = distance_cloud
-        marker_point.pose.position.y = -horizontal_pos_cloud
-        marker_point.pose.position.z = -vertical_pos_cloud
+        marker_point.pose.position.y = horizontal_pos_cloud
+        marker_point.pose.position.z = vertical_pos_cloud
         
         marker_array.markers.append(marker_point)
         
-        top_left_point = self.draw_point(1, image, 2.3, 1.0, 3.0)
-        marker_array.markers.append(top_left_point)
+        # top_left_point = self.draw_point(1, image, 2.3, -1.0, 3.0)
+        # marker_array.markers.append(top_left_point)
         
-        alternative_point = self.draw_point(2, image, horizontal_pos_img, vertical_pos_img, distance_cloud)
-        marker_array.markers.append(alternative_point)
+        # alternative_point = self.draw_point(2, image, horizontal_pos_img, vertical_pos_img, distance_cloud)
+        # marker_array.markers.append(alternative_point)
         
         self.marker_pub_.publish(marker_array)
         
