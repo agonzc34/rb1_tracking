@@ -4,6 +4,7 @@ import cv2 as cv
 import cv_bridge
 import numpy as np
 import rclpy
+from rclpy.time import Time as rclpy_time
 from rclpy.node import Node
 from message_filters import Subscriber, TimeSynchronizer
 
@@ -14,7 +15,9 @@ from sensor_msgs.msg import Image, PointCloud2
 from yolo_msgs.msg import BoundingBoxes, BoundingBox
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point, PoseStamped, PointStamped
-from builtin_interfaces.msg import Duration
+from tf2_geometry_msgs import PointStamped as PointStamped_tf
+from builtin_interfaces.msg import Duration, Time
+
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
@@ -31,7 +34,7 @@ class TrackingPublisher(Node):
         self.topic_sync.registerCallback(self.track_callback)
 
         self.marker_pub_ = self.create_publisher(MarkerArray, '/visualization_marker', 10)
-        self.goal_pose_ = self.create_publisher(PoseStamped, '/goal_pose', 10)
+        self.goal_pose_pub_ = self.create_publisher(PoseStamped, '/goal_pose', 10)
 
         self.tracker = cv.TrackerCSRT.create()
         self.cv_bridge = cv_bridge.CvBridge()
@@ -48,9 +51,9 @@ class TrackingPublisher(Node):
         self.camera['image_ratio'] = self.camera['image_width'] / self.camera['image_height']
         self.camera['vertical_fov'] = self.camera['horizontal_fov'] / self.camera['image_ratio']
         
-        self.tf_buffer = Buffer()
+        self.tf_buffer = Buffer(cache_time=rclpy.duration.Duration(seconds=30))
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        
+                
         self.marker_array = MarkerArray()
         
         self.id = 0
@@ -104,7 +107,7 @@ class TrackingPublisher(Node):
                 err_y = abs(point[2] * np.tan(vertical_angle) + point[1])
                 err = pow(err_x, 2) + pow(err_y, 2)
                                 
-                if err < min_err:  # Se puede cambiar por un umbral y detener el bucle para mejorar rendimiento
+                if err < min_err:  # Se puede cambiar por un umbral y detener el bucle para mejorar rendimiento. Ademas, hay que gestionar si no se encuentra el punto dentro de la nube de puntos
                     min_err = err
                     estimated_point = point
                     # break
@@ -120,23 +123,40 @@ class TrackingPublisher(Node):
             self.marker_array.markers.append(spatial_point_debug)
             
             try:
-                transform = self.tf_buffer.lookup_transform('camera_link', 'map', rclpy.time.Time(), rclpy.duration.Duration(seconds=2))
-                print(transform)
+                # transform = self.tf_buffer.lookup_transform('camera_link', 'map', rclpy.time.Time(), rclpy.duration.Duration(seconds=2))
+                # print(transform)
             
                 #add selected point to transform
-                selected_point_transformable = PointStamped()
+                selected_point_transformable = PointStamped_tf()
+
+                
                 selected_point_transformable.header.frame_id = 'camera_link'
-                selected_point_transformable.header.stamp = image.header.stamp
-                selected_point_transformable.point.x = selected_point[2]
-                selected_point_transformable.point.y = selected_point[1]
-                selected_point_transformable.point.z = selected_point[0]
+                selected_point_transformable.header.stamp = Time(sec=0)
+                selected_point_transformable.point.x = distance 
+                selected_point_transformable.point.y = horizontal_pos 
+                selected_point_transformable.point.z = vertical_pos
                 
-                selected_point_t = self.tf_buffer.transform(selected_point, transform, 'map')
-                
+                selected_point_t = self.tf_buffer.transform(selected_point_transformable, 'map', new_type=PointStamped_tf)
                 selected_point = (selected_point_t.point.x, selected_point_t.point.y, selected_point_t.point.z)
+                
+                print('selected_point abs: {}'.format(selected_point))
                 
                 destination_point_abs_debug = self.debug_point('map', image.header.stamp, 'destination_point_abs', 2, selected_point[0], selected_point[1], selected_point[2], 0.0, 1.0, 0.0, 1.0, 0.1, 1)
                 self.marker_array.markers.append(destination_point_abs_debug)
+                
+                destionation_point = PoseStamped()
+                destionation_point.header.frame_id = 'map'
+                destionation_point.header.stamp = image.header.stamp
+                destionation_point.pose.position.x = selected_point[0]
+                destionation_point.pose.position.y = selected_point[1]
+                destionation_point.pose.position.z = selected_point[2]
+                
+                destionation_point.pose.orientation.x = 0.0
+                destionation_point.pose.orientation.y = 0.0
+                destionation_point.pose.orientation.z = 0.0
+                destionation_point.pose.orientation.w = 1.0
+                
+                self.goal_pose_pub_.publish(destionation_point)
                 
             except Exception as e:
                 print(e)
