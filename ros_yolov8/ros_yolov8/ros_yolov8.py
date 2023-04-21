@@ -34,7 +34,6 @@ class YoloPublisher(Node):
         yolo_weights = os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', yolo_weights)
         
         self.debug = self.get_parameter('debug').get_parameter_value().bool_value
-        print(self.debug)
         
         self.tracker_yaml = self.get_parameter('tracker_yaml').get_parameter_value().string_value
         self.tracker_yaml = os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', self.tracker_yaml)
@@ -86,9 +85,7 @@ class YoloPublisher(Node):
                     results[0].update(boxes=torch.as_tensor(tracks[:, :-1]))
             
             person_boxes = []
-            
-            print(str('Numero resultados: {}, {}'.format(len(results), len(results[0].boxes))))
-            
+                        
             result = results[0]
             annotator = Annotator(cv_image)
             
@@ -101,8 +98,6 @@ class YoloPublisher(Node):
                 xyxy = box.xyxy[0]
                 conf = box.conf[0]
                 
-                print(str.format("{} {} {}", cls, xyxy, conf))
-
                 # annotator.box_label(xyxy, self.yolo.names[int(cls)])
 
                 if conf > 0.5 and self.yolo.names[int(cls)] == 'person':
@@ -127,6 +122,8 @@ class YoloPublisher(Node):
                 bounding_box.xmax = int(self.last_person[0][2])
                 bounding_box.ymax = int(self.last_person[0][3])
                 bounding_box.id = int(self.last_person[1])
+                
+                self.get_logger().info("Person detected with id: " + str(bounding_box.id))
                 
                 bounding_boxes.bounding_boxes.append(bounding_box)
             

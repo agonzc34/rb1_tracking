@@ -30,7 +30,7 @@ class TrackingPublisher(Node):
         self.point_cloud_sub_ = Subscriber(self, PointCloud2, "/camera/points")
         self.bounding_box_sub_ = Subscriber(self, BoundingBoxes, "/obj_rec/bounding_boxes")
 
-        self.topic_sync = TimeSynchronizer([self.image_sub_, self.point_cloud_sub_, self.bounding_box_sub_], 10)
+        self.topic_sync = TimeSynchronizer([self.image_sub_, self.point_cloud_sub_, self.bounding_box_sub_], 15)
         self.topic_sync.registerCallback(self.track_callback)
 
         self.marker_pub_ = self.create_publisher(MarkerArray, '/visualization_marker', 10)
@@ -60,6 +60,8 @@ class TrackingPublisher(Node):
                 
                     
     def track_callback(self, image: Image, point_cloud: PointCloud2, bounding_boxes: BoundingBoxes):
+        self.get_logger().info("track_callback ready")
+        
         bounding_box = bounding_boxes.bounding_boxes[0]
 
         x = bounding_box.xmin
@@ -71,6 +73,8 @@ class TrackingPublisher(Node):
         
         cv.rectangle(cv_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
         
+        
+        #Obtener la proyección del centro del objeto en la imagen
         obj_center_in_img = (x + w/2, y + h/2)
         obj_center_to_img_center = (obj_center_in_img[0] - self.camera['image_width']/2, obj_center_in_img[1] - self.camera['image_height']/2)
         
@@ -90,7 +94,9 @@ class TrackingPublisher(Node):
                     
         horizontal_angle = np.arctan(horizontal_img / distance_img)
         vertical_angle = np.arctan(vertical_img / distance_img)
-                    
+        
+        
+        #Obtener la posición del objeto en el espacio gracias a la nube de puntos
         point_cloud = self.transfromPointCloud(point_cloud)
         estimated_point = None
         
@@ -111,13 +117,15 @@ class TrackingPublisher(Node):
         horizontal_pos = -estimated_point[0]
         vertical_pos = -estimated_point[1]
         distance = estimated_point[2]
-                    
-        print("estimated: {}, y: {}, z: {}".format(horizontal_pos, vertical_pos, distance))
+        
+        self.get_logger().info("estimated: {}, y: {}, z: {}".format(horizontal_pos, vertical_pos, distance))
         
         selected_point = (horizontal_img, vertical_img, distance)
         spatial_point_debug = self.debug_point('camera_link', image.header.stamp, 'spatial_point', 1, distance, horizontal_pos, vertical_pos, r=1.0, g=0.0, b=0.0, a=1.0, scale=0.1, seconds=1)
         self.marker_array.markers.append(spatial_point_debug)
         
+        
+        # Transformar el punto seleccionado a coordenadas del mapa
         try:
             # transform = self.tf_buffer.lookup_transform('camera_link', 'map', rclpy.time.Time(), rclpy.duration.Duration(seconds=2))
             # print(transform)
