@@ -39,7 +39,7 @@ class YoloPublisher(Node):
         self.tracker_yaml = self.get_parameter('tracker_yaml').get_parameter_value().string_value
         self.tracker_yaml = os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', self.tracker_yaml)
         
-        self.bounding_boxes_pub_ = self.create_publisher(BoundingBox, "/obj_rec/bounding_box", 10)
+        self.bounding_boxes_pub_ = self.create_publisher(BoundingBoxes, "/obj_rec/bounding_box", 10)
         
         self.camera_read_sub_ = self.create_subscription(Image, "/head_front_camera/rgb/image_raw", self.camera_read_callback, 10)
         
@@ -121,12 +121,12 @@ class YoloPublisher(Node):
                 self.last_person = min(person_boxes, key=lambda x: x[0][0])
                 
                 bounding_box.class_name = self.yolo.names[int(self.last_person[2])]
-                bounding_box.probability = self.last_person[3]
-                bounding_box.xmin = self.last_person[0][0]
-                bounding_box.ymin = self.last_person[0][1]
-                bounding_box.xmax = self.last_person[0][2]
-                bounding_box.ymax = self.last_person[0][3]
-                bounding_box.id = self.last_person[1]
+                bounding_box.probability = float(self.last_person[3])
+                bounding_box.xmin = int(self.last_person[0][0])
+                bounding_box.ymin = int(self.last_person[0][1])
+                bounding_box.xmax = int(self.last_person[0][2])
+                bounding_box.ymax = int(self.last_person[0][3])
+                bounding_box.id = int(self.last_person[1])
                 
                 bounding_boxes.bounding_boxes.append(bounding_box)
             
