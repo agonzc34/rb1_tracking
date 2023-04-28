@@ -26,9 +26,19 @@ class TrackingPublisher(Node):
     
     def __init__(self):
         super().__init__('tracking_node')
+        
+        self.declare_parameter('image_topic', '/camera/image_raw')
+        self.declare_parameter('point_cloud_topic', '/camera/points')
+        self.declare_parameter('camera_frame', 'camera_link')
+        
+        self.image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
+        self.pc_topic = self.get_parameter('point_cloud_topic').get_parameter_value().string_value
+        self.camera_frame = self.get_parameter('camera_frame').get_parameter_value().string_value
+        
+        self.get_logger().info('Starting tracking node')
                 
-        self.image_sub_ = Subscriber(self, Image, "/camera/image_raw")
-        self.point_cloud_sub_ = Subscriber(self, PointCloud2, "/camera/points")
+        self.image_sub_ = Subscriber(self, Image, self.image_topic)
+        self.point_cloud_sub_ = Subscriber(self, PointCloud2, self.pc_topic)
 
         self.topic_sync = TimeSynchronizer([self.image_sub_, self.point_cloud_sub_], 10)
         self.topic_sync.registerCallback(self.track_callback)
@@ -36,7 +46,7 @@ class TrackingPublisher(Node):
         self.marker_pub_ = self.create_publisher(MarkerArray, '/visualization_marker', 10)
         self.goal_pose_pub_ = self.create_publisher(PoseStamped, '/goal_pose', 10)
 
-        self.tracker = cv.TrackerCSRT.create()
+        self.tracker = cv.TrackerCSRT.create() #! NO FUNCIONA PORQUE LOS MODULOS DE OPENCV SE PISAN ENTRE SI
         self.cv_bridge = cv_bridge.CvBridge()
         self.init_tracker = False
         
@@ -89,7 +99,7 @@ class TrackingPublisher(Node):
             horizontal_img = max_horizontal * obj_to_center_prop[0] * 2
             vertical_img = max_vertical * obj_to_center_prop[1] * 2
             
-            image_line_debug = self.debug_line('camera_link', image.header.stamp, 'image_line', 0, 0.0, 0.0, 0.0, distance_img, horizontal_img, vertical_img, 0.0, 0.0, 0.0, 1.0, 0.01, 1)
+            image_line_debug = self.debug_line(self.camera_frame, image.header.stamp, 'image_line', 0, 0.0, 0.0, 0.0, distance_img, horizontal_img, vertical_img, 0.0, 0.0, 0.0, 1.0, 0.01, 1)
             self.marker_array.markers.append(image_line_debug)
                         
             horizontal_angle = np.arctan(horizontal_img / distance_img)
@@ -119,7 +129,7 @@ class TrackingPublisher(Node):
             print("estimated: {}, y: {}, z: {}".format(horizontal_pos, vertical_pos, distance))
             
             selected_point = (horizontal_img, vertical_img, distance)
-            spatial_point_debug = self.debug_point('camera_link', image.header.stamp, 'spatial_point', 1, distance, horizontal_pos, vertical_pos, r=1.0, g=0.0, b=0.0, a=1.0, scale=0.1, seconds=1)
+            spatial_point_debug = self.debug_point(self.camera_frame, image.header.stamp, 'spatial_point', 1, distance, horizontal_pos, vertical_pos, r=1.0, g=0.0, b=0.0, a=1.0, scale=0.1, seconds=1)
             self.marker_array.markers.append(spatial_point_debug)
             
             try:
@@ -130,7 +140,7 @@ class TrackingPublisher(Node):
                 selected_point_transformable = PointStamped_tf()
 
                 
-                selected_point_transformable.header.frame_id = 'camera_link'
+                selected_point_transformable.header.frame_id = self.camera_frame
                 selected_point_transformable.header.stamp = Time(sec=0)
                 selected_point_transformable.point.x = distance 
                 selected_point_transformable.point.y = horizontal_pos 

@@ -1,0 +1,3 @@
+https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8s.pt
+https://raw.githubusercontent.com/ultralytics/ultralytics/main/ultralytics/tracker/cfg/bytetrack.yaml
+

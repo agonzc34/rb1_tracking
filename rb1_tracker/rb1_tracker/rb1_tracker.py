@@ -6,10 +6,11 @@ import numpy as np
 import rclpy
 from rclpy.time import Time as rclpy_time
 from rclpy.node import Node
-from message_filters import Subscriber, TimeSynchronizer
+from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 import rclpy.logging
 import struct
+from rclpy.qos import qos_profile_sensor_data
 
 from sensor_msgs.msg import Image, PointCloud2
 from yolo_msgs.msg import BoundingBoxes, BoundingBox
@@ -25,18 +26,26 @@ from tf2_ros.transform_listener import TransformListener
 class TrackingPublisher(Node):
     def __init__(self):
         super().__init__('tracking_node')
-                
-        self.image_sub_ = Subscriber(self, Image, "/camera/image_raw")
-        self.point_cloud_sub_ = Subscriber(self, PointCloud2, "/camera/points")
-        self.bounding_box_sub_ = Subscriber(self, BoundingBoxes, "/obj_rec/bounding_boxes")
 
-        self.topic_sync = TimeSynchronizer([self.image_sub_, self.point_cloud_sub_, self.bounding_box_sub_], 15)
+        self.declare_parameter('image_topic', '/camera/image_raw')
+        self.declare_parameter('point_cloud_topic', '/camera/points')
+        self.declare_parameter('camera_frame', 'camera_link')
+        
+        self.image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
+        self.pc_topic = self.get_parameter('point_cloud_topic').get_parameter_value().string_value
+        self.camera_frame = self.get_parameter('camera_frame').get_parameter_value().string_value
+        
+                
+        self.image_sub_ = Subscriber(self, Image, self.image_topic, qos_profile=qos_profile_sensor_data)
+        self.point_cloud_sub_ = Subscriber(self, PointCloud2, self.pc_topic, qos_profile=qos_profile_sensor_data)
+        self.bounding_box_sub_ = Subscriber(self, BoundingBoxes, "/obj_rec/bounding_boxes", qos_profile=qos_profile_sensor_data)
+
+        self.topic_sync = ApproximateTimeSynchronizer([self.image_sub_, self.point_cloud_sub_, self.bounding_box_sub_], 100, 0.2)
         self.topic_sync.registerCallback(self.track_callback)
 
         self.marker_pub_ = self.create_publisher(MarkerArray, '/visualization_marker', 10)
         self.goal_pose_pub_ = self.create_publisher(PoseStamped, '/goal_pose', 10)
 
-        self.tracker = cv.TrackerCSRT.create()
         self.cv_bridge = cv_bridge.CvBridge()
         self.init_tracker = False
         
@@ -55,7 +64,7 @@ class TrackingPublisher(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
                 
         self.marker_array = MarkerArray()
-        
+                
         self.id = 0
                 
                     
@@ -89,7 +98,7 @@ class TrackingPublisher(Node):
         horizontal_img = max_horizontal * obj_to_center_prop[0] * 2
         vertical_img = max_vertical * obj_to_center_prop[1] * 2
         
-        image_line_debug = self.debug_line('camera_link', image.header.stamp, 'image_line', 0, 0.0, 0.0, 0.0, distance_img, horizontal_img, vertical_img, 0.0, 0.0, 0.0, 1.0, 0.01, 1)
+        image_line_debug = self.debug_line(self.camera_link, image.header.stamp, 'image_line', self.id, 0.0, 0.0, 0.0, distance_img, horizontal_img, vertical_img, 0.0, 0.0, 0.0, 1.0, 0.01, 1)
         self.marker_array.markers.append(image_line_debug)
                     
         horizontal_angle = np.arctan(horizontal_img / distance_img)
@@ -121,8 +130,8 @@ class TrackingPublisher(Node):
         self.get_logger().info("estimated: {}, y: {}, z: {}".format(horizontal_pos, vertical_pos, distance))
         
         selected_point = (horizontal_img, vertical_img, distance)
-        spatial_point_debug = self.debug_point('camera_link', image.header.stamp, 'spatial_point', 1, distance, horizontal_pos, vertical_pos, r=1.0, g=0.0, b=0.0, a=1.0, scale=0.1, seconds=1)
-        self.marker_array.markers.append(spatial_point_debug)
+        # spatial_point_debug = self.debug_point(self.camera_link, image.header.stamp, 'spatial_point', self.id, distance, horizontal_pos, vertical_pos, r=1.0, g=0.0, b=0.0, a=1.0, scale=0.1, seconds=1)
+        # self.marker_array.markers.append(spatial_point_debug)
         
         
         # Transformar el punto seleccionado a coordenadas del mapa
@@ -134,7 +143,7 @@ class TrackingPublisher(Node):
             selected_point_transformable = PointStamped_tf()
 
             
-            selected_point_transformable.header.frame_id = 'camera_link'
+            selected_point_transformable.header.frame_id = self.camera_link
             selected_point_transformable.header.stamp = Time(sec=0)
             selected_point_transformable.point.x = distance 
             selected_point_transformable.point.y = horizontal_pos 
@@ -145,7 +154,7 @@ class TrackingPublisher(Node):
             
             print('selected_point abs: {}'.format(selected_point))
             
-            destination_point_abs_debug = self.debug_point('map', image.header.stamp, 'destination_point_abs', 2, selected_point[0], selected_point[1], selected_point[2], 0.0, 1.0, 0.0, 1.0, 0.1, 1)
+            destination_point_abs_debug = self.debug_point('map', image.header.stamp, 'destination_point_abs', self.id, selected_point[0], selected_point[1], selected_point[2], 0.0, 1.0, 0.0, 1.0, 0.1, 1)
             self.marker_array.markers.append(destination_point_abs_debug)
             
             destionation_point = PoseStamped()

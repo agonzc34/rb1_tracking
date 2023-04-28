@@ -12,6 +12,7 @@ from ultralytics.yolo.utils.plotting import Annotator
 from ultralytics.yolo.utils import IterableSimpleNamespace, yaml_load
 from ultralytics.yolo.utils.checks import check_yaml
 from ultralytics.tracker.trackers import BYTETracker
+from rclpy.qos import qos_profile_sensor_data
 from ultralytics.yolo.engine.results import Boxes
 
 from yolo_msgs.msg import BoundingBoxes, BoundingBox
@@ -24,23 +25,24 @@ class YoloPublisher(Node):
     def __init__(self):
         super().__init__('yolo_node') # type: ignore
         
-        self.set_parameters([
-            self.declare_parameter('yolo_weights', 'yolov8m.pt'),
-            self.declare_parameter('debug', True),
-            self.declare_parameter('tracker_yaml', 'bytetrack.yaml')
-        ])
-        
-        yolo_weights = self.get_parameter('yolo_weights').get_parameter_value().string_value
-        yolo_weights = os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', yolo_weights)
+        self.declare_parameter('debug', True)
+        self.declare_parameter('yolo_weights', os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', 'yolov8m.pt'))
+        self.declare_parameter('image_topic', '/head_front_camera/rgb/image_raw')
+        self.declare_parameter('tracker_yaml', os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', 'bytetrack.yaml'))
         
         self.debug = self.get_parameter('debug').get_parameter_value().bool_value
+        
+        yolo_weights = self.get_parameter('yolo_weights').get_parameter_value().string_value
+        # yolo_weights = os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', yolo_weights)
+        
+        self.image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
         
         self.tracker_yaml = self.get_parameter('tracker_yaml').get_parameter_value().string_value
         self.tracker_yaml = os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', self.tracker_yaml)
         
-        self.bounding_boxes_pub_ = self.create_publisher(BoundingBoxes, "/obj_rec/bounding_box", 10)
+        self.bounding_boxes_pub_ = self.create_publisher(BoundingBoxes, "/obj_rec/bounding_boxes", qos_profile_sensor_data)
         
-        self.camera_read_sub_ = self.create_subscription(Image, "/head_front_camera/rgb/image_raw", self.camera_read_callback, 10)
+        self.camera_read_sub_ = self.create_subscription(Image, self.image_topic, self.camera_read_callback, qos_profile_sensor_data)
         
         self.cv_bridge = cv_bridge.CvBridge()
         
@@ -121,7 +123,10 @@ class YoloPublisher(Node):
                 bounding_box.ymin = int(self.last_person[0][1])
                 bounding_box.xmax = int(self.last_person[0][2])
                 bounding_box.ymax = int(self.last_person[0][3])
-                bounding_box.id = int(self.last_person[1])
+                if self.last_person[1] != '':
+                    bounding_box.id = int(self.last_person[1])
+                else:
+                    bounding_box.id = 0
                 
                 self.get_logger().info("Person detected with id: " + str(bounding_box.id))
                 
