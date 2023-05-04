@@ -25,9 +25,9 @@ class YoloPublisher(Node):
     def __init__(self):
         super().__init__('yolo_node') # type: ignore
         
-        self.declare_parameter('debug', True)
-        self.declare_parameter('yolo_weights', os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', 'yolov8m.pt'))
-        self.declare_parameter('image_topic', '/head_front_camera/rgb/image_raw')
+        self.declare_parameter('debug', False)
+        self.declare_parameter('yolo_weights', os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', 'yolov8s.pt'))
+        self.declare_parameter('image_topic', '/camera/rgb/image_raw')
         self.declare_parameter('tracker_yaml', os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', 'bytetrack.yaml'))
         
         self.debug = self.get_parameter('debug').get_parameter_value().bool_value
@@ -74,7 +74,7 @@ class YoloPublisher(Node):
             bounding_box = BoundingBox()
             
             cv_image = self.cv_bridge.imgmsg_to_cv2(image)
-            results = self.yolo.predict(source=cv_image, mode='track')
+            results = self.yolo.predict(source=cv_image, mode='track', classes=[0,1], verbose=self.debug)
             
             det = results[0].boxes.cpu().numpy()
 

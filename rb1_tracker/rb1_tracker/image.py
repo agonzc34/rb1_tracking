@@ -2,8 +2,8 @@
 
 import cv2 as cv
 import cv_bridge
-import time
 import rclpy
+import time
 from rclpy.node import Node
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 
@@ -12,9 +12,9 @@ import struct
 from rclpy.qos import qos_profile_sensor_data
 
 from sensor_msgs.msg import Image, PointCloud2
-from yolo_msgs.msg import BoundingBoxes
+from yolo_msgs.msg import BoundingBoxes, BoundingBox
 from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import Point, PoseStamped
+from geometry_msgs.msg import Point, PoseStamped, PointStamped
 from tf2_geometry_msgs import PointStamped as PointStamped_tf
 from builtin_interfaces.msg import Duration, Time
 
@@ -26,13 +26,17 @@ class TrackingPublisher(Node):
     def __init__(self):
         super().__init__('tracking_node')
 
-        self.declare_parameter('image_topic', '/xtion/rgb/image_raw/repub')
-        self.declare_parameter('point_cloud_topic', '/xtion/depth_registered/points')
-        self.declare_parameter('camera_frame', 'xtion_link')
+        self.declare_parameter('image_topic', '/camera/rgb/image_raw')
+        self.declare_parameter('point_cloud_topic', '/camera/depth_registered/points')
+        self.declare_parameter('camera_frame', 'openni_cam_link')
         
         self.image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
         self.pc_topic = self.get_parameter('point_cloud_topic').get_parameter_value().string_value
         self.camera_frame = self.get_parameter('camera_frame').get_parameter_value().string_value
+        
+        print(self.image_topic)
+        print(self.pc_topic)
+        print(self.camera_frame)
         
                 
         self.image_sub_ = Subscriber(self, Image, self.image_topic, qos_profile=qos_profile_sensor_data)
@@ -43,7 +47,7 @@ class TrackingPublisher(Node):
         self.topic_sync.registerCallback(self.track_callback)
 
         self.marker_pub_ = self.create_publisher(MarkerArray, '/visualization_marker', 10)
-        self.goal_pose_pub_ = self.create_publisher(PoseStamped, '/goal_pose', 10)
+        # self.goal_pose_pub_ = self.create_publisher(PoseStamped, '/goal_pose', 10)
 
         self.cv_bridge = cv_bridge.CvBridge()
         self.init_tracker = False
@@ -71,13 +75,16 @@ class TrackingPublisher(Node):
         h = bounding_box.ymax - bounding_box.ymin
         
         cv_image = self.cv_bridge.imgmsg_to_cv2(image, "bgr8")
+        
+        cv.rectangle(cv_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        
+        
+        #Obtener la proyección del centro del objeto en la imagen
         obj_center_in_img = (x + w/2, y + h/2)
 
-        cv.rectangle(cv_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
         cv.circle(cv_image, (int(obj_center_in_img[0]), int(obj_center_in_img[1])), 5, (0, 0, 255), -1)
-          
-        #Obtener la posición del objeto en el espacio gracias a la nube de puntos
-        estimated_point = self.get_point_from_cloud(point_cloud, obj_center_in_img[0], obj_center_in_img[1])
+        
+        estimated_point = self.transfromPointCloud2(point_cloud, int(obj_center_in_img[0]), int(obj_center_in_img[1]))
         
         horizontal_pos = -estimated_point[0]
         vertical_pos = -estimated_point[1]
@@ -85,6 +92,7 @@ class TrackingPublisher(Node):
         
         # self.get_logger().info("estimated: {}, y: {}, z: {}".format(horizontal_pos, vertical_pos, distance))
         
+        selected_point = (horizontal_pos, vertical_pos, distance)
         spatial_point_debug = self.debug_point(self.camera_frame, image.header.stamp, 'spatial_point', 1, distance, horizontal_pos, vertical_pos, r=1.0, g=0.0, b=0.0, a=1.0, scale=0.1, seconds=1)
         self.marker_array.markers.append(spatial_point_debug)
         
@@ -104,17 +112,17 @@ class TrackingPublisher(Node):
             selected_point_transformable.point.y = horizontal_pos 
             selected_point_transformable.point.z = vertical_pos
             
-            selected_point_t = self.tf_buffer.transform(selected_point_transformable, 'map', new_type=PointStamped_tf)
+            selected_point_t = self.tf_buffer.transform(selected_point_transformable, 'openni_cam_link', new_type=PointStamped_tf)
             selected_point = (selected_point_t.point.x, selected_point_t.point.y, selected_point_t.point.z)
             
             # print('selected_point abs: {}'.format(selected_point))
             self.get_logger().info("selected_point abs: {}".format(selected_point))
             
-            destination_point_abs_debug = self.debug_point('map', image.header.stamp, 'destination_point_abs', 2, selected_point[0], selected_point[1], selected_point[2], 0.0, 1.0, 0.0, 1.0, 0.1, 5)
+            destination_point_abs_debug = self.debug_point('openni_cam_link', image.header.stamp, 'destination_point_abs', 2, selected_point[0], selected_point[1], selected_point[2], 0.0, 1.0, 0.0, 1.0, 0.1, 5)
             self.marker_array.markers.append(destination_point_abs_debug)
             
             destionation_point = PoseStamped()
-            destionation_point.header.frame_id = 'map'
+            destionation_point.header.frame_id = 'openni_cam_link'
             destionation_point.header.stamp = image.header.stamp
             destionation_point.pose.position.x = selected_point[0]
             destionation_point.pose.position.y = selected_point[1]
@@ -125,15 +133,16 @@ class TrackingPublisher(Node):
             destionation_point.pose.orientation.z = 0.0
             destionation_point.pose.orientation.w = 1.0
             
-            self.goal_pose_pub_.publish(destionation_point)
+            # self.goal_pose_pub_.publish(destionation_point)
             
         except Exception as e:
             # print(e)
             self.get_logger().warning("No se ha podido transformar el punto seleccionado a coordenadas del mapa")
             self.get_logger().warning(e)
             
+
         fps = 1 / (self.curr_frame_time - self.last_frame_time)
-        cv.putText(cv_image, "FPS: {:.2f}".format(fps), (10, 30), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        cv.putText(cv_image, "FPS: {:.2f}".format(fps), (10, 30), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
         cv.imshow('Tracking', cv_image)
         cv.waitKey(1)
         
@@ -142,7 +151,42 @@ class TrackingPublisher(Node):
         self.marker_pub_.publish(self.marker_array)
 
 
-    def get_point_from_cloud(self, pointcloud: PointCloud2, x: int, y: int):
+    def transfromPointCloud(self, pointcloud: PointCloud2):
+        point_list = []
+        
+        is_bigendian = pointcloud.is_bigendian
+        point_size = pointcloud.point_step
+        
+        data_format = ""
+        
+        if is_bigendian:
+            data_format = ">f"
+        else:
+            data_format = "<f"
+        
+        for i in range(0, len(pointcloud.data), point_size):
+            x = struct.unpack_from(data_format, pointcloud.data, i)[0]
+            y = struct.unpack_from(data_format, pointcloud.data, i + 4)[0]
+            z = struct.unpack_from(data_format, pointcloud.data, i + 8)[0]
+            
+            if z == 3.0:
+                continue
+            
+            point_list.append([x, y, z])
+            
+            # print('x: {}, y: {}, z: {}'.format(x, y, z))
+        
+        # max_x = max(point_list, key=lambda x: x[0])[0]
+        # max_y = max(point_list, key=lambda x: x[1])[1]
+        # min_x = min(point_list, key=lambda x: x[0])[0]
+        # min_y = min(point_list, key=lambda x: x[1])[1]
+        
+        # print('Maximos y minimos')
+        # print(max_x, max_y, min_x, min_y)
+        
+        return point_list
+    
+    def transfromPointCloud2(self, pointcloud: PointCloud2, x: int, y: int):
         is_bigendian = pointcloud.is_bigendian
         point_size = pointcloud.point_step
         row_step = pointcloud.row_step
@@ -159,6 +203,7 @@ class TrackingPublisher(Node):
         zp = struct.unpack_from(data_format, pointcloud.data, (y * row_step) + (x * point_size) + 8)[0]
         
         return [xp, yp, zp]
+        
     
     def debug_line(self, frame_id, stamp, ns, id, x1, y1, z1, x2, y2, z2, r, g, b, a, scale, seconds):
         marker_line = Marker()
