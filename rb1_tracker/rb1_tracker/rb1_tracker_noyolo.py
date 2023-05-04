@@ -26,9 +26,19 @@ class TrackingPublisher(Node):
     
     def __init__(self):
         super().__init__('tracking_node')
+        
+        self.declare_parameter('image_topic', '/camera/image_raw')
+        self.declare_parameter('point_cloud_topic', '/camera/points')
+        self.declare_parameter('camera_frame', 'camera_link')
+        
+        self.image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
+        self.pc_topic = self.get_parameter('point_cloud_topic').get_parameter_value().string_value
+        self.camera_frame = self.get_parameter('camera_frame').get_parameter_value().string_value
+        
+        self.get_logger().info('Starting tracking node')
                 
-        self.image_sub_ = Subscriber(self, Image, "/camera/image_raw")
-        self.point_cloud_sub_ = Subscriber(self, PointCloud2, "/camera/points")
+        self.image_sub_ = Subscriber(self, Image, self.image_topic)
+        self.point_cloud_sub_ = Subscriber(self, PointCloud2, self.pc_topic)
 
         self.topic_sync = TimeSynchronizer([self.image_sub_, self.point_cloud_sub_], 10)
         self.topic_sync.registerCallback(self.track_callback)
@@ -36,7 +46,7 @@ class TrackingPublisher(Node):
         self.marker_pub_ = self.create_publisher(MarkerArray, '/visualization_marker', 10)
         self.goal_pose_pub_ = self.create_publisher(PoseStamped, '/goal_pose', 10)
 
-        self.tracker = cv.TrackerCSRT.create()
+        self.tracker = cv.TrackerCSRT.create() #! NO FUNCIONA PORQUE LOS MODULOS DE OPENCV SE PISAN ENTRE SI
         self.cv_bridge = cv_bridge.CvBridge()
         self.init_tracker = False
         
@@ -89,18 +99,18 @@ class TrackingPublisher(Node):
             horizontal_img = max_horizontal * obj_to_center_prop[0] * 2
             vertical_img = max_vertical * obj_to_center_prop[1] * 2
             
-            image_line_debug = self.debug_line('camera_link', image.header.stamp, 'image_line', 0, 0.0, 0.0, 0.0, distance_img, horizontal_img, vertical_img, 0.0, 0.0, 0.0, 1.0, 0.01, 1)
+            image_line_debug = self.debug_line(self.camera_frame, image.header.stamp, 'image_line', 0, 0.0, 0.0, 0.0, distance_img, horizontal_img, vertical_img, 0.0, 0.0, 0.0, 1.0, 0.01, 5)
             self.marker_array.markers.append(image_line_debug)
                         
             horizontal_angle = np.arctan(horizontal_img / distance_img)
             vertical_angle = np.arctan(vertical_img / distance_img)
                         
-            point_cloud = self.transfromPointCloud(point_cloud)
+            point_cloud_t = self.transfromPointCloud(point_cloud)
             estimated_point = None
             
             min_err = 1
             
-            for point in point_cloud:
+            for point in point_cloud_t:
                 if abs(point[2] - self.camera['far_clip']) < 0.0001:
                     continue
                 err_x = abs(point[2] * np.tan(horizontal_angle) + point[0])
@@ -115,11 +125,13 @@ class TrackingPublisher(Node):
             horizontal_pos = -estimated_point[0]
             vertical_pos = -estimated_point[1]
             distance = estimated_point[2]
-                        
-            print("estimated: {}, y: {}, z: {}".format(horizontal_pos, vertical_pos, distance))
+
+            selected_point = (distance, horizontal_img, vertical_img)
+            self.get_logger().info("selected: {}, y: {}, z: {}".format(selected_point[0], selected_point[1], selected_point[2]))
             
-            selected_point = (horizontal_img, vertical_img, distance)
-            spatial_point_debug = self.debug_point('camera_link', image.header.stamp, 'spatial_point', 1, distance, horizontal_pos, vertical_pos, r=1.0, g=0.0, b=0.0, a=1.0, scale=0.1, seconds=1)
+            # print("estimated: {}, y: {}, z: {}".format(horizontal_pos, vertical_pos, distance))
+            
+            spatial_point_debug = self.debug_point(self.camera_frame, image.header.stamp, 'spatial_point', 1, distance, horizontal_pos, vertical_pos, r=1.0, g=0.0, b=0.0, a=1.0, scale=0.1, life_secs=5)
             self.marker_array.markers.append(spatial_point_debug)
             
             try:
@@ -130,7 +142,7 @@ class TrackingPublisher(Node):
                 selected_point_transformable = PointStamped_tf()
 
                 
-                selected_point_transformable.header.frame_id = 'camera_link'
+                selected_point_transformable.header.frame_id = self.camera_frame
                 selected_point_transformable.header.stamp = Time(sec=0)
                 selected_point_transformable.point.x = distance 
                 selected_point_transformable.point.y = horizontal_pos 
@@ -139,9 +151,10 @@ class TrackingPublisher(Node):
                 selected_point_t = self.tf_buffer.transform(selected_point_transformable, 'map', new_type=PointStamped_tf)
                 selected_point = (selected_point_t.point.x, selected_point_t.point.y, selected_point_t.point.z)
                 
-                print('selected_point abs: {}'.format(selected_point))
+                # print('selected_point abs: {}'.format(selected_point))
+                self.get_logger().info('selected_point abs: {}'.format(selected_point))
                 
-                destination_point_abs_debug = self.debug_point('map', image.header.stamp, 'destination_point_abs', 2, selected_point[0], selected_point[1], selected_point[2], 0.0, 1.0, 0.0, 1.0, 0.1, 1)
+                destination_point_abs_debug = self.debug_point('map', image.header.stamp, 'destination_point_abs', 2, selected_point[0], selected_point[1], selected_point[2], 0.0, 1.0, 0.0, 1.0, 0.1, life_secs=5)
                 self.marker_array.markers.append(destination_point_abs_debug)
                 
                 destionation_point = PoseStamped()
@@ -159,11 +172,15 @@ class TrackingPublisher(Node):
                 self.goal_pose_pub_.publish(destionation_point)
                 
             except Exception as e:
-                print(e)
+                self.get_logger().warning('Warning: {}'.format(e))
                 
 
         cv.imshow('Tracking', cv_image)
-        cv.waitKey(1)
+        
+        if cv.waitKey(1) & 0xFF == ord('q'):
+            self.get_logger().info('Quit')
+            self.init_tracker = False
+        
         
         self.id += 1
         self.marker_pub_.publish(self.marker_array)
@@ -204,7 +221,7 @@ class TrackingPublisher(Node):
         
         return point_list
     
-    def debug_line(self, frame_id, stamp, ns, id, x1, y1, z1, x2, y2, z2, r, g, b, a, scale, seconds):
+    def debug_line(self, frame_id, stamp, ns, id, x1, y1, z1, x2, y2, z2, r, g, b, a, scale, life_secs):
         marker_line = Marker()
         marker_line.header.frame_id = frame_id
         marker_line.header.stamp = stamp
@@ -221,7 +238,7 @@ class TrackingPublisher(Node):
         marker_line.color.g = g
         marker_line.color.b = b
         
-        marker_line.lifetime = Duration(sec=seconds, nanosec=0)
+        marker_line.lifetime = Duration(sec=life_secs, nanosec=0)
         
         robot_point = Point()
         end_point = Point()
@@ -245,7 +262,7 @@ class TrackingPublisher(Node):
         # alternative_point = self.draw_point(2, image, horizontal_pos_img, vertical_pos_img, distance_cloud)
         # self.marker_array.markers.append(alternative_point)
         
-    def debug_point(self, frame_id, stamp, ns, id, x, y, z, r, g, b, a, scale, seconds):
+    def debug_point(self, frame_id, stamp, ns, id, x, y, z, r, g, b, a, scale, life_secs):
         marker_point = Marker()
         marker_point.header.frame_id = frame_id
         marker_point.header.stamp = stamp
@@ -255,7 +272,7 @@ class TrackingPublisher(Node):
         marker_point.type = Marker.SPHERE
         marker_point.action = Marker.ADD
         marker_point.frame_locked = True
-        marker_point.lifetime = Duration(sec=seconds, nanosec=0)
+        marker_point.lifetime = Duration(sec=life_secs, nanosec=0)
         
         marker_point.color.a = a
         marker_point.color.b = b
