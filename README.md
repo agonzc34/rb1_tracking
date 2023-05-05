@@ -10,3 +10,8 @@ $ pip3 install -r ros_yolov8/requirements.txt
 $ cat ros_yolov8 | curl -O ros_yolov8/netprops/
 $ colcon build
 ```
+
+## Running on RB1 (with asus camera)
+```shell
+$ ros2 launch rb1_tracker_bringup rb1.launch.py
+```
