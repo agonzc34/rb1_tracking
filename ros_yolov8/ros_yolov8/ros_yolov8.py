@@ -47,6 +47,7 @@ class YoloPublisher(Node):
         self.cv_bridge = cv_bridge.CvBridge()
         
         self.yolo = YOLO(yolo_weights)
+        self.yolo.to('cuda')
         self.yolo.fuse()
         
         self.enabled = True
@@ -133,16 +134,16 @@ class YoloPublisher(Node):
                 bounding_boxes.bounding_boxes.append(bounding_box)
             
             
-            cv_image = annotator.result()
+            # cv_image = annotator.result()
             # cv_image = results.render()
             
             if len(bounding_boxes.bounding_boxes) > 0:          
                 self.bounding_boxes_pub_.publish(bounding_boxes)
             
-            if self.debug:
-                cv2.namedWindow("Yolo Debug", cv2.WINDOW_NORMAL)
-                cv2.imshow("Yolo Debug", cv_image)
-                cv2.waitKey(1)
+            # if self.debug:
+            #     cv2.namedWindow("Yolo Debug", cv2.WINDOW_NORMAL)
+            #     cv2.imshow("Yolo Debug", cv_image)
+            #     cv2.waitKey(1)
             
             self.frame_id += 1
             

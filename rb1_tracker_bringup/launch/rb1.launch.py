@@ -13,7 +13,7 @@ def generate_launch_description():
     # Node
     asus_camera_tf_node = Node(
         package='tf2_ros',
-        exec_name='static_transform_publisher',
+        executable='static_transform_publisher',
         arguments=['0.0', '0.0', '0.05', '0.0', '0.0', '0.0', 'xtion_link', 'openni_cam_link'],
     )
    

@@ -38,8 +38,10 @@ class TrackingPublisher(Node):
         self.image_sub_ = Subscriber(self, Image, self.image_topic, qos_profile=qos_profile_sensor_data)
         self.point_cloud_sub_ = Subscriber(self, PointCloud2, self.pc_topic, qos_profile=qos_profile_sensor_data)
         self.bounding_box_sub_ = Subscriber(self, BoundingBoxes, "/obj_rec/bounding_boxes", qos_profile=qos_profile_sensor_data)
+        
+        self.camera_debug_ = self.create_publisher(Image, '/camera_debug', 10)
 
-        self.topic_sync = ApproximateTimeSynchronizer([self.image_sub_, self.point_cloud_sub_, self.bounding_box_sub_], 100, 0.2)
+        self.topic_sync = ApproximateTimeSynchronizer([self.point_cloud_sub_, self.bounding_box_sub_], 100, 0.5)
         self.topic_sync.registerCallback(self.track_callback)
 
         self.marker_pub_ = self.create_publisher(MarkerArray, '/visualization_marker', 10)
@@ -51,7 +53,7 @@ class TrackingPublisher(Node):
         self.last_frame_time = time.time()
         self.curr_frame_time = time.time()
         
-        self.tf_buffer = Buffer(cache_time=rclpy.duration.Duration(seconds=30))
+        self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
                 
         self.marker_array = MarkerArray()
@@ -59,8 +61,8 @@ class TrackingPublisher(Node):
         self.id = 0
                 
                     
-    def track_callback(self, image: Image, point_cloud: PointCloud2, bounding_boxes: BoundingBoxes):
-        self.get_logger().info("track_callback ready")
+    def track_callback(self, point_cloud: PointCloud2, bounding_boxes: BoundingBoxes):
+        self.get_logger().info("track_callback ready 2")
         self.curr_frame_time = time.time()
         
         bounding_box = bounding_boxes.bounding_boxes[0]
@@ -70,11 +72,11 @@ class TrackingPublisher(Node):
         w = bounding_box.xmax - bounding_box.xmin
         h = bounding_box.ymax - bounding_box.ymin
         
-        cv_image = self.cv_bridge.imgmsg_to_cv2(image, "bgr8")
+        # cv_image = self.cv_bridge.imgmsg_to_cv2(image, "bgr8")
         obj_center_in_img = (x + w/2, y + h/2)
 
-        cv.rectangle(cv_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
-        cv.circle(cv_image, (int(obj_center_in_img[0]), int(obj_center_in_img[1])), 5, (0, 0, 255), -1)
+        # cv.rectangle(cv_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        # cv.circle(cv_image, (int(obj_center_in_img[0]), int(obj_center_in_img[1])), 5, (0, 0, 255), -1)
           
         #Obtener la posición del objeto en el espacio gracias a la nube de puntos
         estimated_point = self.get_point_from_cloud(point_cloud, obj_center_in_img[0], obj_center_in_img[1])
@@ -85,7 +87,7 @@ class TrackingPublisher(Node):
         
         # self.get_logger().info("estimated: {}, y: {}, z: {}".format(horizontal_pos, vertical_pos, distance))
         
-        spatial_point_debug = self.debug_point(self.camera_frame, image.header.stamp, 'spatial_point', 1, distance, horizontal_pos, vertical_pos, r=1.0, g=0.0, b=0.0, a=1.0, scale=0.1, seconds=1)
+        spatial_point_debug = self.debug_point(self.camera_frame, point_cloud.header.stamp, 'spatial_point', 1, distance, horizontal_pos, vertical_pos, r=1.0, g=0.0, b=0.0, a=1.0, scale=0.1, seconds=1)
         self.marker_array.markers.append(spatial_point_debug)
         
         
@@ -99,7 +101,7 @@ class TrackingPublisher(Node):
 
             
             selected_point_transformable.header.frame_id = self.camera_frame
-            selected_point_transformable.header.stamp = Time(sec=0)
+            selected_point_transformable.header.stamp = point_cloud.header.stamp
             selected_point_transformable.point.x = distance 
             selected_point_transformable.point.y = horizontal_pos 
             selected_point_transformable.point.z = vertical_pos
@@ -110,12 +112,12 @@ class TrackingPublisher(Node):
             # print('selected_point abs: {}'.format(selected_point))
             self.get_logger().info("selected_point abs: {}".format(selected_point))
             
-            destination_point_abs_debug = self.debug_point('map', image.header.stamp, 'destination_point_abs', 2, selected_point[0], selected_point[1], selected_point[2], 0.0, 1.0, 0.0, 1.0, 0.1, 5)
+            destination_point_abs_debug = self.debug_point('map', point_cloud.header.stamp, 'destination_point_abs', 2, selected_point[0], selected_point[1], selected_point[2], 0.0, 1.0, 0.0, 1.0, 0.1, 5)
             self.marker_array.markers.append(destination_point_abs_debug)
             
             destionation_point = PoseStamped()
             destionation_point.header.frame_id = 'map'
-            destionation_point.header.stamp = image.header.stamp
+            destionation_point.header.stamp = point_cloud.header.stamp
             destionation_point.pose.position.x = selected_point[0]
             destionation_point.pose.position.y = selected_point[1]
             destionation_point.pose.position.z = selected_point[2]
@@ -133,9 +135,12 @@ class TrackingPublisher(Node):
             self.get_logger().warning(e)
             
         fps = 1 / (self.curr_frame_time - self.last_frame_time)
-        cv.putText(cv_image, "FPS: {:.2f}".format(fps), (10, 30), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        cv.imshow('Tracking', cv_image)
-        cv.waitKey(1)
+        # cv.putText(cv_image, "FPS: {:.2f}".format(fps), (10, 30), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        # cv.imshow('Tracking', cv_image)
+        # cv.waitKey(1)
+        
+        # image_debug = self.cv_bridge.cv2_to_imgmsg(cv_image, "bgr8")
+        # self.camera_debug_.publish(image_debug)
         
         self.id += 1
         self.last_frame_time = self.curr_frame_time
@@ -143,6 +148,8 @@ class TrackingPublisher(Node):
 
 
     def get_point_from_cloud(self, pointcloud: PointCloud2, x: int, y: int):
+        x = int(x)
+        y = int(y)
         is_bigendian = pointcloud.is_bigendian
         point_size = pointcloud.point_step
         row_step = pointcloud.row_step

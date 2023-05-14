@@ -14,7 +14,7 @@ def generate_launch_description():
     debug_yolo = LaunchConfiguration('debug')
     debug_yolo_cmd = DeclareLaunchArgument(
         'debug',
-        default_value='True',
+        default_value='False',
         description='Enable debug mode'
     )
     
