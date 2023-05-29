@@ -24,7 +24,8 @@ setup(
     entry_points={
         'console_scripts': [
             'ros_yolov8 = ros_yolov8.ros_yolov8:main',
-            'webcam = ros_yolov8.webcam:main'
+            'webcam = ros_yolov8.webcam:main',
+            'ros_noyolo = ros_yolov8.ros_noyolo:main'
         ],
     },
 )

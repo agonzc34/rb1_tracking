@@ -14,7 +14,7 @@ def generate_launch_description():
     asus_camera_tf_node = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
-        arguments=['0.0', '0.0', '0.05', '0.0', '0.0', '0.0', 'xtion_link', 'openni_cam_link'],
+        arguments=['0.0', '0.0', '0.05', '0.0', '0.0', '0.0', 'xtion_link', 'asus_xtion_link'],
     )
    
     # Launch
@@ -40,11 +40,11 @@ def generate_launch_description():
         }.items()
     )
     
-    asus_xtion_launch_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(asus_xtion_share, 'launch', 'asus_xtion.launch.py')
-        )
-    )
+    # asus_xtion_launch_cmd = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource(
+    #         os.path.join(asus_xtion_share, 'launch', 'asus_xtion.launch.py')
+    #     )
+    # )
     
     navigation_launch_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -58,7 +58,7 @@ def generate_launch_description():
     ld.add_action(yolo_launch_cmd)
     ld.add_action(tracker_launch_cmd)
     ld.add_action(asus_camera_tf_node)
-    ld.add_action(asus_xtion_launch_cmd)
+    # ld.add_action(asus_xtion_launch_cmd)
     ld.add_action(navigation_launch_cmd)
     
     return ld

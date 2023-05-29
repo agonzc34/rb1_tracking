@@ -26,10 +26,9 @@ def generate_launch_description():
             os.path.join(pkg_dir, 'launch', 'yolov8.launch.py'),
         ),
         launch_arguments={
-            "model": 'yolov8m.pt',
-            "device": 'cuda:0',
-            "debug": 'True',
-        }
+            'debug': 'True',
+            'image_topic': '/head_front_camera/rgb/image_raw'
+        }.items()
     )
 
     ld = LaunchDescription()

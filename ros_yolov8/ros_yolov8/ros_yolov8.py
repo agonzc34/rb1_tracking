@@ -20,27 +20,27 @@ from std_srvs.srv import SetBool
 from sensor_msgs.msg import Image
 
 
-class YoloPublisher(Node):
+class YoloNode(Node):
     
     def __init__(self):
         super().__init__('yolo_node') # type: ignore
         
         self.declare_parameter('debug', False)
-        self.declare_parameter('yolo_weights', os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', 'yolov8s.pt'))
-        self.declare_parameter('image_topic', '/camera/rgb/image_raw')
-        self.declare_parameter('tracker_yaml', os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', 'bytetrack.yaml'))
+        self.declare_parameter('yolo_weights', 'yolov8s.pt')
+        self.declare_parameter('image_topic', '/head_front_camera/rgb/image_raw')
+        self.declare_parameter('tracker_yaml', 'bytetrack.yaml')
         
         self.debug = self.get_parameter('debug').get_parameter_value().bool_value
-        
         yolo_weights = self.get_parameter('yolo_weights').get_parameter_value().string_value
-        # yolo_weights = os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', yolo_weights)
-        
         self.image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
-        
         self.tracker_yaml = self.get_parameter('tracker_yaml').get_parameter_value().string_value
-        self.tracker_yaml = os.path.join(ament_index_python.packages.get_package_share_directory('ros_yolov8'), 'net_props', self.tracker_yaml)
+
+        self.get_logger().info("Yolo weights: " + yolo_weights)
+        self.get_logger().info("Image topic: " + self.image_topic)
+        self.get_logger().info("Tracker YAML: " + self.tracker_yaml)
         
         self.bounding_boxes_pub_ = self.create_publisher(BoundingBoxes, "/obj_rec/bounding_boxes", qos_profile_sensor_data)
+        self.yolo_debug_pub_ = self.create_publisher(Image, "/obj_rec/yolo", qos_profile_sensor_data)
         
         self.camera_read_sub_ = self.create_subscription(Image, self.image_topic, self.camera_read_callback, qos_profile_sensor_data)
         
@@ -134,17 +134,12 @@ class YoloPublisher(Node):
                 bounding_boxes.bounding_boxes.append(bounding_box)
             
             
-            # cv_image = annotator.result()
-            # cv_image = results.render()
+            cv_image = annotator.result()
             
             if len(bounding_boxes.bounding_boxes) > 0:          
                 self.bounding_boxes_pub_.publish(bounding_boxes)
             
-            # if self.debug:
-            #     cv2.namedWindow("Yolo Debug", cv2.WINDOW_NORMAL)
-            #     cv2.imshow("Yolo Debug", cv_image)
-            #     cv2.waitKey(1)
-            
+            self.yolo_debug_pub_.publish(self.cv_bridge.cv2_to_imgmsg(cv_image))
             self.frame_id += 1
             
     
@@ -159,7 +154,7 @@ class YoloPublisher(Node):
 def main(args=None):
     rclpy.init(args=args)
     
-    yolo_publisher = YoloPublisher()
+    yolo_publisher = YoloNode()
     rclpy.spin(yolo_publisher)
     
     yolo_publisher.destroy_node()
