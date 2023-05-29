@@ -6,7 +6,8 @@ from ament_index_python.packages import get_package_share_directory
 import os
 
 def generate_launch_description():
-    rb1_tracker_share = get_package_share_directory('rb1_tracker_bringup')
+    rb1_tracker_share = get_package_share_directory('rb1_tracker')
+    yolo_share = get_package_share_directory('ros_yolov8')
     asus_xtion_share = get_package_share_directory('asus_xtion')
     nav2_share = get_package_share_directory('tiago_navigation')
          
@@ -32,7 +33,7 @@ def generate_launch_description():
     
     yolo_launch_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(rb1_tracker_share, 'launch', 'yolo.launch.py')
+            os.path.join(yolo_share, 'launch', 'yolo.launch.py')
         ), 
         launch_arguments={
             'image_topic': '/camera/rgb/image_raw',
@@ -40,11 +41,11 @@ def generate_launch_description():
         }.items()
     )
     
-    # asus_xtion_launch_cmd = IncludeLaunchDescription(
-    #     PythonLaunchDescriptionSource(
-    #         os.path.join(asus_xtion_share, 'launch', 'asus_xtion.launch.py')
-    #     )
-    # )
+    asus_xtion_launch_cmd = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(asus_xtion_share, 'launch', 'asus_xtion.launch.py')
+        )
+    )
     
     navigation_launch_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -55,10 +56,10 @@ def generate_launch_description():
     
     ld = LaunchDescription()
     
+    ld.add_action(asus_xtion_launch_cmd)
     ld.add_action(yolo_launch_cmd)
     ld.add_action(tracker_launch_cmd)
     ld.add_action(asus_camera_tf_node)
-    # ld.add_action(asus_xtion_launch_cmd)
     ld.add_action(navigation_launch_cmd)
     
     return ld

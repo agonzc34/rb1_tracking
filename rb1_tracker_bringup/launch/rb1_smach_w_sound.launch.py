@@ -6,7 +6,7 @@ from ament_index_python.packages import get_package_share_directory
 import os
 
 def generate_launch_description():
-    rb1_tracker_bu_share = get_package_share_directory('rb1_tracker_bringup')
+    yolo_share = get_package_share_directory('ros_yolov8')
     nav2_share = get_package_share_directory('tiago_navigation')
     asus_xtion_share = get_package_share_directory('asus_xtion')
     
@@ -35,11 +35,11 @@ def generate_launch_description():
     # Launch
     yolo_launch_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(rb1_tracker_bu_share, 'launch', 'yolo.launch.py')
+            os.path.join(yolo_share, 'launch', 'yolo.launch.py')
         ),
         launch_arguments={
             'image_topic': '/camera/rgb/image_raw',
-            'yolo_weights': os.path.join(rb1_tracker_bu_share, 'net_props', 'yolov8s.pt'),
+            'yolo_weights': os.path.join(yolo_share, 'net_props', 'yolov8s.pt'),
         }.items()
     )
     
