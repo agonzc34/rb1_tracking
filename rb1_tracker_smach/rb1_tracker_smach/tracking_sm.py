@@ -44,7 +44,7 @@ class WaitState(smach.State):
 class TrackingState(smach.State):
     def __init__(self):
         smach.State.__init__(self, outcomes=['outcome1'])
-        self.track_node = TrackingNode('/camera/depth_registered/points', 'xtion_link')
+        self.track_node = TrackingNode('/camera/depth/points', 'camera_rgb_optical_frame')
         self.key_pressed = False
         
     def on_press(self, key):

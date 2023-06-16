@@ -31,7 +31,7 @@ class TrackingNode(Node):
             self.pc_topic = args[0]
             self.camera_frame = args[1]
         else:
-            self.declare_parameter('point_cloud_topic', '/camera/depth_registered/points')
+            self.declare_parameter('point_cloud_topic', '/camera/depth/points')
             self.declare_parameter('camera_frame', 'xtion_link')
             
             self.pc_topic = self.get_parameter('point_cloud_topic').get_parameter_value().string_value
