@@ -8,14 +8,14 @@ import os
 def generate_launch_description():
     yolo_share = get_package_share_directory('ros_yolov8')
     nav2_share = get_package_share_directory('tiago_navigation')
-    asus_xtion_share = get_package_share_directory('asus_xtion')
+   # asus_xtion_share = get_package_share_directory('asus_xtion')
     
     # Node
-    asus_camera_tf_node = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=['0.0', '0.0', '0.05', '0.0', '0.0', '0.0', 'xtion_link', 'asus_xtion_link'],
-    )
+    # asus_camera_tf_node = Node(
+    #     package='tf2_ros',
+    #     executable='static_transform_publisher',
+    #     arguments=['0.0', '0.0', '0.05', '0.0', '0.0', '0.0', 'xtion_link', 'asus_xtion_link'],
+    # )
     
     audio_tts_node = Node(
         package='audio_common',
@@ -29,13 +29,13 @@ def generate_launch_description():
     
     state_machine_node = Node(
         package='rb1_tracker_smach',
-        executable='tracking_smach.py'
+        executable='tracking_sm.py'
     )
     
     # Launch
     yolo_launch_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(yolo_share, 'launch', 'yolo.launch.py')
+            os.path.join(yolo_share, 'launch', 'yolov8.launch.py')
         ),
         launch_arguments={
             'image_topic': '/camera/rgb/image_raw',
@@ -43,25 +43,25 @@ def generate_launch_description():
         }.items()
     )
     
-    navigation_launch_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(nav2_share, 'launch', 'tiago_nav2.launch.py')
-        )
-    )
+    # navigation_launch_cmd = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource(
+    #         os.path.join(nav2_share, 'launch', 'tiago_nav2.launch.py')
+    #     )
+    # )
     
-    asus_xtion_launch_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(asus_xtion_share, 'launch', 'asus_xtion.launch.py')
-        )
-    )
+    # asus_xtion_launch_cmd = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource(
+    #         os.path.join(asus_xtion_share, 'launch', 'asus_xtion.launch.py')
+    #     )
+    # )
     
     ld = LaunchDescription()
     
-    ld.add_action(asus_xtion_launch_cmd)
+    #ld.add_action(asus_xtion_launch_cmd)
     ld.add_action(yolo_launch_cmd)
-    ld.add_action(navigation_launch_cmd)
+    #ld.add_action(navigation_launch_cmd)
     
-    ld.add_action(asus_camera_tf_node)
+    #ld.add_action(asus_camera_tf_node)
     ld.add_action(audio_tts_node)
     ld.add_action(audio_player_node)
     ld.add_action(state_machine_node)

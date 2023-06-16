@@ -10,7 +10,7 @@ def generate_launch_description():
     
     cloud_point_topic_cmd = DeclareLaunchArgument(
         'cloud_point_topic',
-        default_value='/camera/depth_registered/points',
+        default_value='/camera/depth/points',
         description='Cloud point topic'
     )
     
