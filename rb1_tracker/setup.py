@@ -25,7 +25,8 @@ setup(
             'rb1_tracker = rb1_tracker.rb1_tracker:main',
             'ray_pub = rb1_tracker.ray_pub:main',
             'rb1_tracker_noyolo = rb1_tracker.rb1_tracker_noyolo:main',
-            'image = rb1_tracker.image:main' 
+            'image = rb1_tracker.image:main',
+            'clear_costmaps = rb1_tracker.clear_costmaps:main',
         ],
     },
 )
