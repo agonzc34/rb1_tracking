@@ -6,12 +6,14 @@ from time import sleep
 from nav2_msgs.srv import ClearCostmapAroundRobot
 
 
-class ClearCostmaps(Node):
+class ClearCostmapsNode(Node):
     def __init__(self, *args):
         super().__init__('clear_costmaps_node')
         
         # args
         self.sleep_time = 2.0
+        self.reset_distance_global = 5.0
+        self.reset_distance_local = 2.0
         
         # clients
         self.clear_global_client = self.create_client(ClearCostmapAroundRobot, "/global_costmap/clear_around_global_costmap")
@@ -34,7 +36,7 @@ class ClearCostmaps(Node):
             self.get_logger().info("Clear global costmap service not available, waiting again...")
         
         request = ClearCostmapAroundRobot.Request()
-        request.reset_distance = 5.0
+        request.reset_distance = self.reset_distance_global
         
         future = self.clear_global_client.call_async(request)
         
@@ -48,7 +50,7 @@ class ClearCostmaps(Node):
             self.get_logger().info("Clear local costmap service not available, waiting again...")
             
         request = ClearCostmapAroundRobot.Request()
-        request.reset_distance = 2.0
+        request.reset_distance = self.reset_distance_local
         
         future = self.clear_local_client.call_async(request)
         
@@ -58,10 +60,10 @@ class ClearCostmaps(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    yolo_publisher = ClearCostmaps()
+    costmap_node = ClearCostmapsNode()
 
     while True:
-        yolo_publisher.clear_call()
+        costmap_node.clear_call()
 
 if __name__ == '__main__':
     main()
