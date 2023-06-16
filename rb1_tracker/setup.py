@@ -1,4 +1,5 @@
 from setuptools import setup
+import glob
 
 package_name = 'rb1_tracker'
 
@@ -10,6 +11,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/launch', glob.glob('launch/*'))
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -23,7 +25,8 @@ setup(
             'rb1_tracker = rb1_tracker.rb1_tracker:main',
             'ray_pub = rb1_tracker.ray_pub:main',
             'rb1_tracker_noyolo = rb1_tracker.rb1_tracker_noyolo:main',
-            'image = rb1_tracker.image:main' 
+            'image = rb1_tracker.image:main',
+            'clear_costmaps = rb1_tracker.clear_costmaps:main',
         ],
     },
 )

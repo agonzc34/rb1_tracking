@@ -6,23 +6,20 @@ import os
 
 def generate_launch_description():
     simulator_share = get_package_share_directory('rb1_gazebo')
-    rb1_tracker_share = get_package_share_directory('rb1_tracker_bringup')
+    rb1_tracker_share = get_package_share_directory('rb1_tracker')
+    yolo_share = get_package_share_directory('ros_yolov8')
             
     # Launch
     yolo_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(rb1_tracker_share, 'launch', 'yolo.launch.py')
+            os.path.join(yolo_share, 'launch', 'noyolo.launch.py')
         )
     )
     
     tracking_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(rb1_tracker_share, 'launch', 'tracking.launch.py')
-        ),
-        launch_arguments={
-            'exec_name': 'rb1_tracker_noyolo',
-            'image_topic': '/camera/image_raw'
-        }.items()
+            os.path.join(rb1_tracker_share, 'launch', 'simulator.launch.py')
+        )
     )
     
     
@@ -36,7 +33,7 @@ def generate_launch_description():
     ld = LaunchDescription()
     
     ld.add_action(simulator_launch)
-    # ld.add_action(yolo_launch)
+    ld.add_action(yolo_launch)
     ld.add_action(tracking_launch)
     
     return ld
